@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stories — Zumer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="hdr"></div>
+<main class="wrap page" id="box"><p class="mute">Loading…</p></main>
+<div id="ftr"></div>
+<div id="toast" role="status"></div>
+
+<script type="module">
+import { GENRES, esc, gname, loadStories, storyCard } from "./common.js";
+const p = new URLSearchParams(location.search), box = document.getElementById("box");
+
+try {
+  const all = await loadStories();
+
+  if (p.get("story")) {
+    /* NOVEL READER WINDOW */
+    const s = all.find(x => x.id === p.get("story"));
+    if (!s) throw 0;
+    const chs = s.chapters || [], i = Math.min(+p.get("ch") || 0, Math.max(chs.length - 1, 0)), c = chs[i] || { title: "", body: "" };
+    document.title = `${s.title} — Zumer`;
+    
+    box.innerHTML = `
+      <a class="mute" href="read.html?genre=${s.genre}">← Back to ${esc(gname(s.genre))}</a>
+      <p style="color:var(--gold); letter-spacing:.14em; text-transform:uppercase; font-size:.8rem; font-weight:600; margin-top:1rem;">${esc(gname(s.genre))}</p>
+      <h1 class="title">${esc(s.title)}</h1>
+      <p class="mute" style="margin-bottom:1.5rem">Written by <b>Zumer</b></p>
+      
+      <div class="chips">
+        ${chs.map((x, n) => `<a class="chip ${n === i ? "on" : ""}" href="read.html?story=${s.id}&ch=${n}">${esc(x.title)}</a>`).join("")}
+        ${s.pdfUrl ? `<a class="btn red sm" href="${esc(s.pdfUrl)}" target="_blank" rel="noopener">Download PDF</a>` : `<button class="btn red sm" id="pdf">Download PDF</button>`}
+      </div>
+      
+      <article class="reader">
+        <h2 style="font-size:1.8rem; margin-bottom:1rem; color:var(--gold);">${esc(c.title)}</h2>
+        ${esc(c.body)}
+      </article>`;
+
+    document.getElementById("pdf")?.addEventListener("click", () => {
+      const w = window.open("", "_blank");
+      w.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>${esc(s.title)} — Zumer</title></head>
+        <body style="font-family:'Georgia',serif; line-height:1.8; font-size:18px; max-width:680px; margin:40px auto; color:#111; padding:0 20px;">
+          <h1 style="font-size:32px; margin-bottom:4px;">${esc(s.title)}</h1>
+          <p style="color:#666; font-style:italic;">Genre: ${esc(gname(s.genre))} | Author: Zumer</p>
+          <hr style="border:0; border-top:1px solid #ccc; margin:20px 0;">
+          ${chs.map(x => `<h2 style="margin-top:30px;">${esc(x.title)}</h2><p style="white-space:pre-wrap">${esc(x.body)}</p>`).join("")}
+        </body>
+        </html>`);
+      w.document.close();
+      w.print();
+    });
+  } else {
+    /* NOVEL SELECTION / GENRE WINDOW */
+    let list = all, heading = "All Stories by Zumer";
+    if (p.get("genre")) { 
+      heading = gname(p.get("genre")); 
+      list = all.filter(s => s.genre === p.get("genre")); 
+    }
+    if (p.get("q")) {
+      const q = p.get("q").toLowerCase(); 
+      heading = `Results for “${esc(p.get("q"))}”`;
+      list = all.filter(s => [s.title, s.summary, ...(s.chapters || []).map(c => c.title + " " + c.body)].join(" ").toLowerCase().includes(q));
+    }
+    
+    box.innerHTML = `
+      <a class="mute" href="index.html#stories">← All Sections</a>
+      <h1 class="title">${heading}</h1>
+      <p class="mute" style="margin-bottom:1.5rem">Select a novel or story by Zumer to start reading.</p>
+      
+      <div class="chips">
+        <a class="chip ${!p.get("genre") && !p.get("q") ? "on" : ""}" href="read.html">All</a>
+        ${GENRES.map(g => `<a class="chip ${p.get("genre") === g.slug ? "on" : ""}" href="read.html?genre=${g.slug}">${g.name}</a>`).join("")}
+      </div>
+      
+      <div class="cards">${list.map(storyCard).join("") || '<p class="mute">Nothing found here yet. New stories will be uploaded soon.</p>'}</div>`;
+  }
+} catch { box.innerHTML = '<p class="mute">We could not load stories right now. Please try again soon.</p>'; }
+</script>
+</body>
+</html>

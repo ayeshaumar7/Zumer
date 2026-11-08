@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join the book club — Zumer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="hdr"></div>
+<section class="authpage">
+  <div class="auth-l">
+    <div class="portrait small"><img src="zumer.png" alt="Zumer" onerror="this.parentNode.style.display='none'"></div>
+    <h2>Zumer's stories</h2>
+    <p class="mute big">Join my stories, explore and experience unexpected words and plots.</p>
+  </div>
+  <div class="auth-r">
+    <div class="tabs"><button id="tLogin">Log in</button><button id="tSign">Sign up</button></div>
+    <p class="mute" id="sub"></p>
+    <form id="af">
+      <label id="nameBox">Name<input name="name" autocomplete="name"></label>
+      <label>Email address<input name="email" type="email" required autocomplete="email"></label>
+      <label>Password<input name="pw" type="password" required minlength="6" autocomplete="current-password"></label>
+      <label id="pw2Box">Confirm password<input name="pw2" type="password"></label>
+      <button class="btn red wide" id="go"></button>
+    </form>
+  </div>
+</section>
+<div id="ftr"></div>
+<div id="toast" role="status"></div>
+
+<script type="module">
+import { auth, db, ready, F, ZUMER_EMAIL, toast } from "./common.js";
+let signup = new URLSearchParams(location.search).has("signup");
+const $ = id => document.getElementById(id);
+function paint() {
+  $("tLogin").className = signup ? "" : "on"; $("tSign").className = signup ? "on" : "";
+  $("nameBox").hidden = $("pw2Box").hidden = !signup;
+  $("go").textContent = signup ? "Create account" : "Log in";
+  $("sub").textContent = signup ? "Create a free account to join the book club" : "Already a member? Log in";
+}
+$("tLogin").onclick = () => { signup = false; paint(); }; $("tSign").onclick = () => { signup = true; paint(); }; paint();
+
+const msg = c => ({ "auth/invalid-credential": "Email or password is incorrect.", "auth/email-already-in-use": "That email is already registered.", "auth/weak-password": "Use at least 6 characters.", "auth/invalid-email": "Please check your email address." }[c] || "Something went wrong. Please try again.");
+$("af").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!ready) return toast("Preview mode: connect Firebase in common.js to enable accounts.");
+  const f = Object.fromEntries(new FormData(e.target));
+  try {
+    if (signup) {
+      if (f.pw !== f.pw2) return toast("Passwords don't match");
+      const cr = await F.createUserWithEmailAndPassword(auth, f.email, f.pw);
+      await F.updateProfile(cr.user, { displayName: f.name || "Reader" });
+      await F.setDoc(F.doc(db, "members", cr.user.uid), { name: f.name || "Reader", email: f.email, joined: F.serverTimestamp() });
+    } else await F.signInWithEmailAndPassword(auth, f.email, f.pw);
+    location.href = f.email === ZUMER_EMAIL ? "admin.html" : "index.html#stories";
+  } catch (err) { toast(msg(err.code)); }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Studio — Zumer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="hdr"></div>
+
+<section class="gate" id="gate">
+  <form class="panel" id="gf">
+    <h2>Zumer's Studio</h2>
+    <p class="mute" id="gmsg">This door is only for Zumer.</p>
+    <label>Email<input name="email" type="email" required></label>
+    <label>Password<input name="pw" type="password" required></label>
+    <button class="btn red wide">Enter the Studio</button>
+  </form>
+</section>
+
+<main class="wrap page" id="dash" hidden>
+  <h1 class="title">Welcome back, Zumer</h1>
+  <div class="stats">
+    <div><b id="sS">0</b><span>stories</span></div>
+    <div><b id="sM">0</b><span>messages</span></div>
+    <div><b id="sB">0</b><span>club members</span></div>
+  </div>
+
+  <div class="adm">
+    <form class="panel" id="nf">
+      <h3>Publish a new story</h3>
+      <label>Title<input name="title" required></label>
+      <label>Shelf<select name="genre" id="gsel"></select></label>
+      <label>Short summary<input name="summary" maxlength="160"></label>
+      <label>PDF link (Google Drive, "anyone with the link")<input name="pdfUrl" type="url" placeholder="https://drive.google.com/…"></label>
+      <label>First chapter title<input name="ct" value="Chapter 1" required></label>
+      <label>First chapter text<textarea name="body" rows="9" required></textarea></label>
+      <button class="btn red wide">Publish story</button>
+    </form>
+
+    <form class="panel" id="cf2">
+      <h3>Add a chapter to a story</h3>
+      <label>Story<select name="story" id="ssel" required></select></label>
+      <label>Chapter title<input name="ct" required></label>
+      <label>Chapter text<textarea name="body" rows="9" required></textarea></label>
+      <button class="btn red wide">Add chapter</button>
+    </form>
+  </div>
+
+  <h3 class="sub">Your stories</h3><div id="slist"></div>
+  <h3 class="sub">Messages from readers</h3><div id="mlist"></div>
+</main>
+
+<div id="ftr"></div>
+<div id="toast" role="status"></div>
+
+<script type="module">
+import { auth, db, ready, F, GENRES, isZumer, esc, gname, toast } from "./common.js";
+const $ = id => document.getElementById(id);
+$("gsel").innerHTML = GENRES.map(g => `<option value="${g.slug}">${g.name}</option>`).join("");
+if (!ready) $("gmsg").textContent = "Preview mode: paste your Firebase config into common.js to unlock the Studio.";
+
+$("gf").addEventListener("submit", async e => {
+  e.preventDefault(); if (!ready) return toast("Firebase is not connected yet.");
+  const f = Object.fromEntries(new FormData(e.target));
+  try { await F.signInWithEmailAndPassword(auth, f.email, f.pw); } catch { toast("Email or password is incorrect"); }
+});
+
+if (ready) F.onAuthStateChanged(auth, u => {
+  const ok = isZumer(u);
+  $("gate").hidden = ok; $("dash").hidden = !ok;
+  if (u && !ok) { toast("This door is only for Zumer."); F.signOut(auth); }
+  if (ok) refresh();
+});
+
+async function refresh() {
+  const read = async n => (await F.getDocs(F.query(F.collection(db, n), F.orderBy("createdAt", "desc")))).docs.map(d => ({ id: d.id, ...d.data() }));
+  const st = await read("stories"), ms = await read("messages");
+  let nb = 0; try { nb = (await F.getDocs(F.collection(db, "members"))).size; } catch {}
+  $("sS").textContent = st.length; $("sM").textContent = ms.length; $("sB").textContent = nb;
+  $("ssel").innerHTML = st.map(s => `<option value="${s.id}">${esc(s.title)}</option>`).join("");
+  $("slist").innerHTML = st.map(s => `<div class="item"><span><b>${esc(s.title)}</b> <small class="mute">${esc(gname(s.genre))} · ${(s.chapters || []).length} ch.</small></span>
+    <span><a class="btn sm" href="read.html?story=${s.id}" target="_blank">View</a> <button class="btn sm" data-del="stories/${s.id}">Delete</button></span></div>`).join("") || '<p class="mute">No stories yet. Publish your first one above.</p>';
+  $("mlist").innerHTML = ms.map(m => `<div class="item msgrow"><div><b>${esc(m.name)}</b> <small class="mute">${esc(m.email)} · ${esc(m.topic)}</small><p>${esc(m.msg)}</p></div>
+    <button class="btn sm" data-del="messages/${m.id}">Delete</button></div>`).join("") || '<p class="mute">No messages yet.</p>';
+}
+
+document.addEventListener("click", async e => {
+  const d = e.target.dataset.del; if (!d || !confirm("Delete this permanently?")) return;
+  await F.deleteDoc(F.doc(db, ...d.split("/"))); toast("Deleted"); refresh();
+});
+
+$("nf").addEventListener("submit", async e => {
+  e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+  try {
+    await F.addDoc(F.collection(db, "stories"), { title: f.title, genre: f.genre, summary: f.summary, pdfUrl: f.pdfUrl, chapters: [{ title: f.ct, body: f.body }], createdAt: F.serverTimestamp() });
+    e.target.reset(); toast("Story published"); refresh();
+  } catch { toast("Could not publish. Check your rules and login."); }
+});
+
+$("cf2").addEventListener("submit", async e => {
+  e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+  try { await F.updateDoc(F.doc(db, "stories", f.story), { chapters: F.arrayUnion({ title: f.ct, body: f.body }) }); e.target.reset(); toast("Chapter added"); refresh(); }
+  catch { toast("Could not add the chapter"); }
+});
+</script>
+</body>
+</html>
