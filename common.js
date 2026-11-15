@@ -10,7 +10,6 @@ export const GENRES = [
   { slug: "non-fiction", name: "Non-Fiction", note: "Real thoughts, written plainly" }
 ];
 
-/* Set to empty array so sample stories do not show by default */
 const SAMPLE = [];
 
 export const isZumer = u => !!u && u.email === ZUMER_EMAIL;
@@ -53,18 +52,90 @@ put("ftr", `<footer>
   <div style="max-width: 1000px; margin: 2rem auto 0; padding-top: 1.5rem; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; text-align: left;">
     <p class="small mute">© ${new Date().getFullYear()} Zumer. All rights reserved. Unauthorized reproduction prohibited.</p>
     <div style="display: flex; gap: 1.5rem;">
-      <a href="#" class="small mute" onclick="alert('Privacy Policy: All reader accounts and messages are securely stored via Firebase.'); return false;">Privacy Policy</a>
+      <a href="#" class="small mute" onclick="alert('Privacy Policy: All reader accounts and messages are securely stored.'); return false;">Privacy Policy</a>
       <a href="#" class="small mute" onclick="alert('Terms: All stories written by Zumer are protected under copyright law.'); return false;">Terms of Use</a>
     </div>
   </div>
 </footer>`);
+
 document.getElementById("burger")?.addEventListener("click", () => document.querySelector(".bar").classList.toggle("open"));
 const guest = '<a class="btn sm" href="login.html">Log in</a><a class="btn sm red" href="login.html?signup=1">Sign up</a>';
 put("who", guest);
 
-/* Firebase Optional Setup */
+/* Firebase & LocalStorage Fallback Authentication */
 export let auth = null, db = null, ready = false;
 export const F = {};
+
+function initLocalAuth() {
+  ready = true;
+  const checkUser = () => {
+    const raw = localStorage.getItem("zumer_current_user");
+    return raw ? JSON.parse(raw) : null;
+  };
+  
+  const updateHeader = () => {
+    const u = checkUser();
+    put("who", u 
+      ? `${isZumer(u) ? '<a class="btn sm red" href="admin.html">Studio</a>' : `<span class="small mute">Hi, ${esc(u.displayName || "reader")}</span>`}<button class="btn sm" id="out">Log out</button>`
+      : guest);
+    document.getElementById("out")?.addEventListener("click", () => {
+      localStorage.removeItem("zumer_current_user");
+      toast("Logged out successfully.");
+      updateHeader();
+      setTimeout(() => location.href = "index.html", 600);
+    });
+  };
+  updateHeader();
+
+  F.createUserWithEmailAndPassword = async (a, email, pw) => {
+    let users = JSON.parse(localStorage.getItem("zumer_users") || "[]");
+    if (users.find(u => u.email === email)) throw { code: "auth/email-already-in-use" };
+    if (!email || !email.includes("@")) throw { code: "auth/invalid-email" };
+    if (pw.length < 6) throw { code: "auth/weak-password" };
+    const newUser = { uid: "user_" + Date.now(), email, displayName: email.split("@")[0] };
+    users.push({ ...newUser, pw });
+    localStorage.setItem("zumer_users", JSON.stringify(users));
+    localStorage.setItem("zumer_current_user", JSON.stringify(newUser));
+    updateHeader();
+    return { user: newUser };
+  };
+
+  F.signInWithEmailAndPassword = async (a, email, pw) => {
+    let users = JSON.parse(localStorage.getItem("zumer_users") || "[]");
+    if (email === ZUMER_EMAIL && !users.find(u => u.email === ZUMER_EMAIL)) {
+      users.push({ uid: "zumer_admin", email: ZUMER_EMAIL, pw: "zumer123", displayName: "Zumer" });
+    }
+    const found = users.find(u => u.email === email && u.pw === pw);
+    if (!found) throw { code: "auth/invalid-credential" };
+    const sessionUser = { uid: found.uid, email: found.email, displayName: found.displayName };
+    localStorage.setItem("zumer_current_user", JSON.stringify(sessionUser));
+    updateHeader();
+    return { user: sessionUser };
+  };
+
+  F.signOut = async () => {
+    localStorage.removeItem("zumer_current_user");
+    updateHeader();
+  };
+
+  F.updateProfile = async (u, { displayName }) => {
+    let users = JSON.parse(localStorage.getItem("zumer_users") || "[]");
+    const idx = users.findIndex(x => x.email === u.email);
+    if (idx >= 0) {
+      users[idx].displayName = displayName;
+      localStorage.setItem("zumer_users", JSON.stringify(users));
+    }
+    u.displayName = displayName;
+    localStorage.setItem("zumer_current_user", JSON.stringify(u));
+    updateHeader();
+  };
+
+  F.setDoc = async () => {};
+  F.addDoc = async () => {};
+  F.collection = () => {};
+  F.serverTimestamp = () => new Date().toISOString();
+}
+
 try {
   if (!CFG.apiKey.startsWith("PASTE")) {
     const B = "https://www.gstatic.com/firebasejs/10.12.2/";
@@ -78,8 +149,12 @@ try {
         : guest);
       document.getElementById("out")?.addEventListener("click", () => F.signOut(auth));
     });
+  } else {
+    initLocalAuth();
   }
-} catch (e) { console.warn("Firebase is off:", e); }
+} catch (e) { 
+  initLocalAuth(); 
+}
 
 export const loadStories = async () => !ready ? SAMPLE
   : (await F.getDocs(F.query(F.collection(db, "stories"), F.orderBy("createdAt", "desc")))).docs.map(d => ({ id: d.id, ...d.data() }));
