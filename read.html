@@ -22,7 +22,6 @@ try {
   const all = await loadStories();
 
   if (p.get("story")) {
-    /* NOVEL READER WINDOW */
     const s = all.find(x => x.id === p.get("story"));
     if (!s) throw 0;
     const chs = s.chapters || [], i = Math.min(+p.get("ch") || 0, Math.max(chs.length - 1, 0)), c = chs[i] || { title: "", body: "" };
@@ -61,7 +60,6 @@ try {
       w.print();
     });
   } else {
-    /* NOVEL SELECTION / GENRE WINDOW */
     let list = all, heading = "All Stories by Zumer";
     if (p.get("genre")) { 
       heading = gname(p.get("genre")); 
